@@ -150,27 +150,23 @@
 
   // Dados que vieram do backend
   let objetos = [];
-  let requisicoes = [];
 
   let editingId = null;
   let editingObj = null;
   let confirmingId = null;
+  let retirarId = null;
   let formFoto = null;
-  let freshLog = false;
 
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
   const fmtDate = (d) => { if (!d) return ''; const [y, m, dd] = d.split('-'); return dd + '/' + m + '/' + y; };
   const today = () => { const t = new Date(); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); };
-  const nowHM = () => { const t = new Date(); return String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0'); };
   const pad4 = (n) => String(n).padStart(4, '0');
 
   // -----------------------------------------------------------------
   // COMUNICAÇÃO COM A API
   // -----------------------------------------------------------------
-  const TEXTO_STATUS = { 200: 'OK', 201: 'Created', 204: 'No Content', 400: 'Bad Request', 404: 'Not Found', 500: 'Server Error' };
-
   async function api(metodo, caminho, corpo) {
     let resposta;
     try {
@@ -181,10 +177,9 @@
       });
     } catch (e) {
       $('#offline').hidden = false;
-      throw new Error('Sem conexão com o servidor.');
+      throw new Error('Sem conexão. Tente de novo.');
     }
     $('#offline').hidden = true;
-    registrar(metodo, '/objetos' + caminho, resposta.status);
     const dados = resposta.status === 204 ? null : await resposta.json().catch(() => null);
     if (!resposta.ok) throw new Error((dados && dados.erro) || 'Erro ' + resposta.status);
     return dados;
@@ -192,13 +187,6 @@
 
   async function carregarObjetos() {
     objetos = await api('GET', '');
-  }
-
-  function registrar(metodo, caminho, codigo) {
-    requisicoes.unshift({ metodo, caminho, res: codigo + ' ' + (TEXTO_STATUS[codigo] || ''), t: nowHM() });
-    requisicoes = requisicoes.slice(0, 8);
-    freshLog = true;
-    renderLog();
   }
 
   // -----------------------------------------------------------------
@@ -224,6 +212,9 @@
       '<div class="card-body">' +
         '<span class="cat">' + esc(catLabel(o.categoria)) + '</span>' +
         '<h3>' + esc(o.nome || 'Nome do objeto') + '</h3>' +
+        (o.dono_nome && o.status !== 'disponivel'
+          ? '<p class="owner">' + (o.status === 'devolvido' ? 'Devolvido para ' : 'Reservado para ') + esc(o.dono_nome) + '</p>'
+          : '') +
         '<dl class="meta">' +
           '<div>' + PIN + '<dt>Local</dt><dd>' + esc(o.local_encontrado || 'Local') + '</dd></div>' +
           '<div>' + CAL + '<dt>Data</dt><dd>' + esc(fmtDate(o.data_encontrada) || '--/--/----') + '</dd></div>' +
@@ -273,7 +264,7 @@
   function renderAll() {
     const q = norm($('#fBusca').value), cat = $('#fCat').value, loc = $('#fLocal').value, st = $('#fStatus').value;
     const list = objetos.filter((o) =>
-      (!q || norm(o.nome).includes(q) || norm(o.descricao).includes(q)) &&
+      (!q || norm(o.nome).includes(q) || norm(o.descricao).includes(q) || norm(o.dono_nome).includes(q)) &&
       (!cat || o.categoria === cat) && (!loc || o.local_encontrado === loc) && (!st || o.status === st)
     );
     $('#resultCount').textContent = list.length === 1 ? '1 objeto encontrado' : list.length + ' objetos encontrados';
@@ -297,15 +288,20 @@
       data_encontrada: $('#iData').value,
       local_encontrado: $('#iLocal').value.trim(),
       descricao: $('#iDesc').value.trim(),
-      status: (document.querySelector('input[name="status"]:checked') || {}).value || 'disponivel',
       foto: formFoto
     };
+  }
+  function previewData() {
+    const d = formData();
+    d.status = editingObj ? editingObj.status : 'disponivel';
+    d.dono_nome = editingObj ? editingObj.dono_nome : null;
+    return d;
   }
   function currentArt(cat) {
     return editingObj && editingObj.desenho && editingObj.categoria === cat ? editingObj.desenho : null;
   }
   function renderPhotoPrev() {
-    const d = formData();
+    const d = previewData();
     const box = $('#photoPrev');
     box.className = 'photo-prev ' + tint(d.categoria);
     const art = currentArt(d.categoria);
@@ -313,12 +309,13 @@
     $('#rmFoto').hidden = !formFoto;
   }
   function renderLivePreview() {
-    const d = formData();
+    const d = previewData();
     $('#livePreview').innerHTML = cardHTML({ ...d, id: 0, desenho: currentArt(d.categoria) }, { preview: true });
     renderPhotoPrev();
   }
   function clearErrors() {
-    ['Nome', 'Data', 'Local'].forEach((k) => { $('#e' + k).hidden = true; $('#i' + k).classList.remove('bad'); });
+    ['Nome', 'Data', 'Local', 'Login', 'Senha'].forEach((k) => { $('#e' + k).hidden = true; $('#i' + k).classList.remove('bad'); });
+    $('#eData').textContent = 'Escolha a data.';
   }
   function fillForm() {
     clearErrors();
@@ -326,25 +323,26 @@
     const o = editingObj;
     if (o) {
       $('#formTitle').textContent = 'Editar objeto';
-      $('#formSub').textContent = 'Corrija as informações e salve. A mudança vai para o banco de dados na hora.';
+      $('#acesso').hidden = true;
+      $('#formSub').textContent = 'Corrija o nome, o lugar ou a descrição.';
       $('#iNome').value = o.nome; $('#iCat').value = o.categoria; $('#iData').value = o.data_encontrada;
       $('#iLocal').value = o.local_encontrado; $('#iDesc').value = o.descricao || '';
-      document.querySelector('input[name="status"][value="' + o.status + '"]').checked = true;
       formFoto = o.foto || null;
       $('#submitBtn').textContent = 'Salvar alterações';
       $('#cancelEdit').hidden = false;
     } else {
       $('#formTitle').textContent = 'Cadastrar objeto encontrado';
-      $('#formSub').textContent = 'Encontrou alguma coisa? Preencha os dados abaixo e o objeto aparece na página de achados na hora.';
+      $('#acesso').hidden = false;
+      $('#formSub').textContent = 'Encontrou alguma coisa? Entre com seu login e sua senha para cadastrar o objeto.';
       $('#objForm').reset();
       $('#iCat').value = 'mochila';
       $('#iData').value = today();
-      $('#st1').checked = true;
       formFoto = null;
       $('#submitBtn').textContent = 'Cadastrar objeto';
       $('#cancelEdit').hidden = true;
     }
     $('#iFoto').value = '';
+    $('#iData').max = today();
     renderLivePreview();
   }
   $('#objForm').addEventListener('input', renderLivePreview);
@@ -387,6 +385,22 @@
     [['Nome', d.nome], ['Data', d.data_encontrada], ['Local', d.local_encontrado]].forEach(([k, v]) => {
       if (!v) { $('#e' + k).hidden = false; $('#i' + k).classList.add('bad'); firstBad = firstBad || $('#i' + k); }
     });
+    if (d.data_encontrada && d.data_encontrada > today()) {
+      $('#eData').textContent = 'A data não pode ser no futuro.';
+      $('#eData').hidden = false;
+      $('#iData').classList.add('bad');
+      firstBad = firstBad || $('#iData');
+    }
+    if (editingId == null) {
+      d.login = $('#iLogin').value.trim();
+      d.senha = $('#iSenha').value.trim();
+      if (d.login.length < 3 || /\s/.test(d.login)) {
+        $('#eLogin').hidden = false; $('#iLogin').classList.add('bad'); firstBad = firstBad || $('#iLogin');
+      }
+      if (d.senha.length < 4) {
+        $('#eSenha').hidden = false; $('#iSenha').classList.add('bad'); firstBad = firstBad || $('#iSenha');
+      }
+    }
     if (firstBad) { firstBad.focus(); return; }
 
     const btn = $('#submitBtn');
@@ -419,61 +433,55 @@
       '<div class="k-ok"><b>' + c.disponivel + '</b><span>disponíveis</span></div>' +
       '<div class="k-wait"><b>' + c.aguardando + '</b><span>aguardando retirada</span></div>' +
       '<div class="k-done"><b>' + c.devolvido + '</b><span>devolvidos</span></div>';
-    const head = '<div class="list-head"><span></span><span>Objeto</span><span>Local</span><span>Data</span><span>Status</span><span>Ações</span></div>';
+    const head = '<div class="list-head"><span></span><span>Objeto</span><span>Local</span><span>Data</span><span>Situação</span><span>Ações</span></div>';
     const rows = objetos.map((o) => {
-      const opts = Object.entries(STATUS).map(([k, v]) => '<option value="' + k + '"' + (k === o.status ? ' selected' : '') + '>' + v + '</option>').join('');
+      const dono = o.dono_nome
+        ? '<span class="dono">Dono: ' + esc(o.dono_nome) + ' · ' + esc(o.dono_contato) + '</span>'
+        : '<span class="dono">Ainda sem dono</span>';
+      const reserva = o.status === 'aguardando'
+        ? '<div class="status-actions"><button type="button" class="btn primary small" data-retirar="' + o.id + '">Confirmar retirada</button><button type="button" class="btn ghost small" data-cancelar="' + o.id + '">Desfazer reserva</button></div>'
+        : '';
       const confirm = confirmingId === o.id ?
         '<div class="confirm"><span>Excluir <b>' + esc(o.nome) + '</b>? Essa ação não pode ser desfeita.</span><div>' +
         '<button type="button" class="btn danger small" data-del-yes="' + o.id + '">Excluir</button>' +
         '<button type="button" class="btn ghost small" data-del-no>Cancelar</button></div></div>' : '';
+      const confirmarRetirada = retirarId === o.id ?
+        '<div class="confirm"><span>Confirmar que <b>' + esc(o.dono_nome) + '</b> já retirou <b>' + esc(o.nome) + '</b>?</span><div>' +
+        '<button type="button" class="btn primary small" data-retirar-yes="' + o.id + '">Confirmar</button>' +
+        '<button type="button" class="btn ghost small" data-retirar-no>Voltar</button></div></div>' : '';
+      const editar = o.status === 'devolvido' ? '' :
+        '<button type="button" class="icon-btn" data-edit="' + o.id + '" aria-label="Editar ' + esc(o.nome) + '" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button>';
       return '<div class="item">' +
         '<div class="thumb ' + tint(o.categoria) + '">' + picInner(o) + '</div>' +
         '<div class="name"><b>' + esc(o.nome) + '</b><span>#' + pad4(o.id) + ' · ' + esc(catLabel(o.categoria)) + '</span></div>' +
         '<div class="meta-line"><span>' + esc(o.local_encontrado) + '</span><span>' + fmtDate(o.data_encontrada) + '</span></div>' +
         '<div class="local">' + esc(o.local_encontrado) + '</div>' +
         '<div class="date">' + fmtDate(o.data_encontrada) + '</div>' +
-        '<div class="status"><label class="cell-label" for="st-' + o.id + '">Status</label><select class="input s-' + o.status + '" id="st-' + o.id + '" data-status="' + o.id + '">' + opts + '</select></div>' +
+        '<div class="status">' + pill(o.status) + dono + reserva + '</div>' +
         '<div class="acts">' +
           '<button type="button" class="icon-btn" data-detail="' + o.id + '" aria-label="Ver ' + esc(o.nome) + '" title="Ver"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>' +
-          '<button type="button" class="icon-btn" data-edit="' + o.id + '" aria-label="Editar ' + esc(o.nome) + '" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button>' +
+          editar +
           '<button type="button" class="icon-btn del" data-del="' + o.id + '" aria-label="Excluir ' + esc(o.nome) + '" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button>' +
-        '</div>' + confirm +
+        '</div>' + confirm + confirmarRetirada +
       '</div>';
     }).join('');
     $('#manageList').innerHTML = objetos.length ? head + rows :
       '<div class="empty" style="margin:16px"><b>Nenhum objeto cadastrado</b>Use a página Cadastrar para adicionar o primeiro.</div>';
   }
-  function renderLog() {
-    $('#logList').innerHTML = requisicoes.length ? requisicoes.map((x, i) =>
-      '<li class="' + (i === 0 && freshLog ? 'new' : '') + '"><span class="verb v-' + x.metodo + '">' + x.metodo + '</span><span class="path">' + esc(x.caminho) + '</span><span class="res">' + x.res + ' · ' + x.t + '</span></li>'
-    ).join('') : '<li><span class="res" style="grid-column:1/-1">Nenhuma requisição ainda.</span></li>';
-    freshLog = false;
+  async function recarregar(mensagem) {
+    await carregarObjetos();
+    const v = location.hash.slice(1) || 'inicio';
+    if (v === 'inicio') renderHome();
+    if (v === 'achados') { fillFilterSelects(); renderAll(); }
+    if (v === 'gerenciar') renderManage();
+    if (mensagem) toast(mensagem);
   }
 
-  // Mudar o status direto na lista → PUT
-  document.addEventListener('change', async (e) => {
-    const id = e.target.dataset && e.target.dataset.status;
-    if (!id) return;
-    const o = objetos.find((x) => x.id === +id);
-    if (!o) return;
-    const novo = e.target.value;
-    try {
-      await api('PUT', '/' + o.id, { status: novo });
-      await carregarObjetos();
-      toast('“' + o.nome + '” agora está como ' + STATUS[novo] + '.');
-    } catch (err) {
-      toast(err.message);
-    }
-    renderManage();
-    const sel = document.getElementById('st-' + o.id);
-    if (sel) sel.focus();
-  });
-
   // -----------------------------------------------------------------
-  // CLIQUES (ver, editar, excluir)
+  // CLIQUES (ver, editar, reservar, retirar, excluir)
   // -----------------------------------------------------------------
   document.addEventListener('click', async (e) => {
-    const t = e.target.closest('[data-detail],[data-edit],[data-del],[data-del-yes],[data-del-no],[data-reset]');
+    const t = e.target.closest('[data-detail],[data-edit],[data-del],[data-del-yes],[data-del-no],[data-reset],[data-retirar],[data-retirar-yes],[data-retirar-no],[data-cancelar]');
     if (!t) return;
     if (t.hasAttribute('data-reset')) {
       editingId = null;
@@ -481,8 +489,15 @@
       return;
     }
     if (t.dataset.detail) openDetail(+t.dataset.detail);
-    else if (t.dataset.edit) { editingId = +t.dataset.edit; confirmingId = null; go('cadastrar'); }
-    else if (t.dataset.del) { confirmingId = +t.dataset.del; renderManage(); const y = document.querySelector('[data-del-yes]'); if (y) y.focus(); }
+    else if (t.dataset.edit) {
+      const o = objetos.find((x) => x.id === +t.dataset.edit);
+      if (o && o.status === 'devolvido') { toast('Objeto já devolvido não pode ser alterado.'); return; }
+      editingId = +t.dataset.edit;
+      confirmingId = null;
+      retirarId = null;
+      go('cadastrar');
+    }
+    else if (t.dataset.del) { confirmarId(+t.dataset.del); }
     else if (t.hasAttribute('data-del-no')) { const id = confirmingId; confirmingId = null; renderManage(); const b = document.querySelector('[data-del="' + id + '"]'); if (b) b.focus(); }
     else if (t.dataset.delYes) {
       const id = +t.dataset.delYes;
@@ -498,21 +513,75 @@
       confirmingId = null;
       renderManage();
     }
+    else if (t.dataset.retirar) { confirmarRetirada(+t.dataset.retirar); }
+    else if (t.hasAttribute('data-retirar-no')) { const id = retirarId; retirarId = null; renderManage(); const b = document.querySelector('[data-retirar="' + id + '"]'); if (b) b.focus(); }
+    else if (t.dataset.retirarYes) {
+      const id = +t.dataset.retirarYes;
+      const o = objetos.find((x) => x.id === id);
+      retirarId = null;
+      t.disabled = true;
+      try {
+        await api('POST', '/' + id + '/retirar');
+        await recarregar('Retirada de “' + (o ? o.nome : 'objeto') + '” confirmada' + (o && o.dono_nome ? ' para ' + o.dono_nome : '') + '.');
+        if (!$('#overlay').hidden) openDetail(id);
+      } catch (err) {
+        toast(err.message);
+        renderManage();
+      }
+    }
+    else if (t.dataset.cancelar) {
+      const id = +t.dataset.cancelar;
+      const o = objetos.find((x) => x.id === id);
+      t.disabled = true;
+      try {
+        await api('POST', '/' + id + '/cancelar');
+        await recarregar('A reserva de “' + (o ? o.nome : 'objeto') + '” foi desfeita.');
+        if (!$('#overlay').hidden) openDetail(id);
+      } catch (err) {
+        toast(err.message);
+        if (!$('#overlay').hidden) openDetail(id);
+      }
+    }
   });
+
+  function confirmarId(id) {
+    confirmingId = id;
+    retirarId = null;
+    renderManage();
+    const y = document.querySelector('[data-del-yes]');
+    if (y) y.focus();
+  }
+  function confirmarRetirada(id) {
+    retirarId = id;
+    confirmingId = null;
+    renderManage();
+    const y = document.querySelector('[data-retirar-yes]');
+    if (y) y.focus();
+  }
 
   // -----------------------------------------------------------------
   // JANELA DE DETALHES
   // -----------------------------------------------------------------
   let lastFocus = null;
+  function blocoDono(o) {
+    if (o.status === 'disponivel') {
+      return '<form class="claim" id="claimForm">' +
+        '<p class="retirada">É seu? Diga seu nome e um contato. O objeto fica reservado para você retirar na secretaria.</p>' +
+        '<div class="field"><label for="cNome">Seu nome <span class="req">*</span></label><input class="input" id="cNome" maxlength="60" autocomplete="name"><span class="err" id="eDono" hidden>Escreva seu nome.</span></div>' +
+        '<div class="field"><label for="cContato">Contato ou turma <span class="req">*</span></label><input class="input" id="cContato" maxlength="80" placeholder="Ex.: 8º ano B"><span class="err" id="eContato" hidden>Diga um contato para a secretaria.</span></div>' +
+        '<button type="submit" class="btn primary" id="claimBtn">Sou o dono e quero retirar</button>' +
+      '</form>';
+    }
+    if (o.status === 'aguardando') {
+      return '<p class="retirada">Reservado para <b>' + esc(o.dono_nome) + '</b>. A retirada é na secretaria.</p>' +
+        '<button type="button" class="btn ghost small" data-cancelar="' + o.id + '">Desfazer esta reserva</button>';
+    }
+    return '<p class="retirada">Este objeto foi devolvido para <b>' + esc(o.dono_nome) + '</b>.</p>';
+  }
   function openDetail(id) {
     const o = objetos.find((x) => x.id === id);
     if (!o) return;
-    lastFocus = document.activeElement;
-    const retirada = {
-      disponivel: 'É seu? Vá até a secretaria e descreva o objeto para retirar.',
-      aguardando: 'O dono já foi identificado e pode retirar na secretaria.',
-      devolvido: 'Este objeto já voltou para o dono.'
-    }[o.status];
+    if ($('#overlay').hidden && document.activeElement && document.activeElement !== document.body) lastFocus = document.activeElement;
     $('#modal').innerHTML =
       '<div class="pic ' + tint(o.categoria) + '">' + picInner(o) + '</div>' +
       '<div class="modal-body">' +
@@ -525,12 +594,42 @@
           '<div>' + PIN + '<dt>Local</dt><dd>Encontrado em ' + esc(o.local_encontrado) + '</dd></div>' +
           '<div>' + CAL + '<dt>Data</dt><dd>' + fmtDate(o.data_encontrada) + '</dd></div>' +
         '</dl>' +
-        '<p class="retirada">' + retirada + '</p>' +
+        blocoDono(o) +
         '<span class="code">Registro #' + pad4(o.id) + '</span>' +
       '</div>';
     $('#overlay').hidden = false;
-    $('#mClose').focus();
     $('#mClose').addEventListener('click', closeDetail);
+    const form = $('#claimForm');
+    if (form) {
+      form.addEventListener('submit', (e) => enviarReserva(e, o.id));
+      $('#cNome').focus();
+    } else {
+      $('#mClose').focus();
+    }
+  }
+  async function enviarReserva(e, id) {
+    e.preventDefault();
+    const nome = $('#cNome').value.trim();
+    const contato = $('#cContato').value.trim();
+    let ruim = false;
+    $('#eDono').hidden = !!nome;
+    $('#cNome').classList.toggle('bad', !nome);
+    $('#eContato').hidden = !!contato;
+    $('#cContato').classList.toggle('bad', !contato);
+    if (!nome) ruim = true;
+    if (!contato) ruim = true;
+    if (ruim) { (nome ? $('#cContato') : $('#cNome')).focus(); return; }
+    const alvo = objetos.find((x) => x.id === id);
+    const btn = $('#claimBtn');
+    btn.disabled = true;
+    try {
+      await api('POST', '/' + id + '/reivindicar', { dono_nome: nome, dono_contato: contato });
+      await recarregar('“' + (alvo ? alvo.nome : 'Objeto') + '” ficou reservado para ' + nome + '. A retirada é na secretaria.');
+      openDetail(id);
+    } catch (err) {
+      toast(err.message);
+      try { await recarregar(); openDetail(id); } catch (e2) { /* a lista antiga continua na tela */ }
+    }
   }
   function closeDetail() {
     $('#overlay').hidden = true;
@@ -562,7 +661,7 @@
     let v = location.hash.slice(1);
     if (!VIEWS.includes(v)) v = 'inicio';
     if (v !== 'cadastrar') { editingId = null; editingObj = null; }
-    if (v !== 'gerenciar') confirmingId = null;
+    if (v !== 'gerenciar') { confirmingId = null; retirarId = null; }
     document.querySelectorAll('[data-view]').forEach((s) => { s.hidden = s.dataset.view !== v; });
     document.querySelectorAll('.nav a').forEach((a) => {
       if (a.getAttribute('href') === '#' + v) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
@@ -575,6 +674,13 @@
       if (editingId != null) {
         try { editingObj = await api('GET', '/' + editingId); }
         catch (err) { toast(err.message); editingId = null; }
+        if (editingObj && editingObj.status === 'devolvido') {
+          toast('Objeto já devolvido não pode ser alterado.');
+          editingId = null;
+          editingObj = null;
+          go('gerenciar');
+          return;
+        }
       }
       fillForm();
       return;
@@ -592,6 +698,5 @@
     if (v === 'gerenciar') renderManage();
   }
   window.addEventListener('hashchange', route);
-  renderLog();
   route();
 })();

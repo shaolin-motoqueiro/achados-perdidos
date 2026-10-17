@@ -6,7 +6,7 @@
   <title>Achados e Perdidos</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Nunito:wght@400;600;700;800&family=Caveat:wght@600;700&family=JetBrains+Mono:wght@500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Nunito:wght@400;600;700;800&family=Caveat:wght@600;700&display=swap">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ccircle cx='17' cy='17' r='12' fill='%23f7b8d6' stroke='%231e1621' stroke-width='3'/%3E%3Cpath d='M26 26l9 9' stroke='%231e1621' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
   <script src="app.js" defer></script>
@@ -41,7 +41,7 @@
       <a href="#inicio" data-reset>Início</a>
       <a href="#achados" data-reset>Objetos encontrados</a>
       <a href="#cadastrar" data-reset>Cadastrar</a>
-      <a href="#gerenciar" data-reset>Gerenciar</a>
+      <a href="#gerenciar" data-reset>Secretaria</a>
     </nav>
   </div>
 </header>
@@ -49,14 +49,14 @@
 <main class="wrap">
 
   <div class="offline" id="offline" role="alert" hidden>
-    <b>Sem conexão com o servidor.</b> Confira se o backend está rodando (<code>npm start</code>) e recarregue a página.
+    <b>Sem conexão.</b> Verifique a internet e recarregue a página.
   </div>
 
   <!-- INÍCIO -->
   <section data-view="inicio">
     <div class="hero">
       <div>
-        <p class="eyebrow">Sistema da escola</p>
+        <p class="eyebrow">Da sua escola</p>
         <h1>Achados <span class="hl">e Perdidos</span></h1>
         <p class="hand">Conectando pessoas aos seus pertences</p>
         <p class="lead">Perdeu alguma coisa na escola? Procure aqui pelo nome, categoria ou lugar. Encontrou algo que não é seu? Cadastre em menos de um minuto para o dono conseguir achar.</p>
@@ -68,7 +68,7 @@
       <div class="tag-wrap">
         <div class="tag">
           <span class="hole" aria-hidden="true"></span>
-          <p class="hand">Um sistema simples para um grande impacto ♡</p>
+          <p class="hand">O que é seu pode voltar para você ♡</p>
           <div class="tag-stats" id="tagStats"></div>
         </div>
       </div>
@@ -78,46 +78,20 @@
       <div class="sec-head">
         <div>
           <h2>Encontrados recentemente</h2>
-          <p>Os últimos objetos que ainda esperam o dono.</p>
+          <p>Os últimos objetos que ainda não voltaram para o dono.</p>
         </div>
         <a class="btn soft small" href="#achados" data-reset>Ver todos os objetos</a>
       </div>
       <div class="grid four" id="recentGrid"></div>
     </div>
 
-    <div class="sec">
-      <div class="sec-head">
-        <div>
-          <h2>Como o sistema funciona</h2>
-          <p>O caminho de um cadastro, do formulário até o banco de dados.</p>
-        </div>
-      </div>
-      <div class="how">
-        <ol class="steps">
-          <li><span class="num">1</span><div><b>Usuário</b><span>Preenche o formulário no site (frontend em HTML, CSS e JavaScript).</span></div></li>
-          <li><span class="num">2</span><div><b>Requisição</b><span>O JavaScript envia os dados em JSON para a API.</span></div></li>
-          <li><span class="num">3</span><div><b>Backend</b><span>Node.js + Express confere os dados e salva no banco SQLite.</span></div></li>
-          <li><span class="num">4</span><div><b>Resposta</b><span>A API devolve o resultado e o site atualiza a lista na hora.</span></div></li>
-        </ol>
-        <div class="api">
-          <h3>Endpoints (CRUD)</h3>
-          <p>Express · tabela <code>objetos</code> no SQLite</p>
-          <ul>
-            <li><span class="verb v-GET">GET</span><code>/objetos</code><small>listar</small></li>
-            <li><span class="verb v-POST">POST</span><code>/objetos</code><small>cadastrar</small></li>
-            <li><span class="verb v-PUT">PUT</span><code>/objetos/:id</code><small>atualizar</small></li>
-            <li><span class="verb v-DELETE">DELETE</span><code>/objetos/:id</code><small>excluir</small></li>
-          </ul>
-        </div>
-      </div>
-    </div>
   </section>
 
   <!-- OBJETOS ENCONTRADOS -->
   <section data-view="achados" hidden>
     <div class="page-title">
       <h1>Objetos encontrados</h1>
-      <p>Pesquise pelo nome ou use os filtros. Achou o seu? Clique em “Ver detalhes” para saber como retirar.</p>
+      <p>Pesquise pelo nome ou use os filtros. Achou o seu? Abra os detalhes, identifique-se como dono e marque a retirada.</p>
     </div>
     <div class="filters">
       <div class="field search-field">
@@ -153,10 +127,25 @@
   <section data-view="cadastrar" hidden>
     <div class="page-title">
       <h1 id="formTitle">Cadastrar objeto encontrado</h1>
-      <p id="formSub">Encontrou alguma coisa? Preencha os dados abaixo e o objeto aparece na página de achados na hora.</p>
+      <p id="formSub">Encontrou alguma coisa? Entre com seu login e sua senha para cadastrar o objeto.</p>
     </div>
     <div class="form-layout">
       <form class="panel form" id="objForm" novalidate>
+        <div id="acesso">
+          <div class="row2">
+            <div class="field">
+              <label for="iLogin">Login <span class="req">*</span></label>
+              <input class="input" id="iLogin" maxlength="40" autocomplete="username" placeholder="Ex.: maria.souza">
+              <span class="err" id="eLogin" hidden>Escreva um login com pelo menos 3 letras, sem espaço.</span>
+            </div>
+            <div class="field">
+              <label for="iSenha">Senha <span class="req">*</span></label>
+              <input class="input" id="iSenha" type="password" maxlength="40" autocomplete="current-password">
+              <span class="err" id="eSenha" hidden>A senha precisa ter pelo menos 4 letras.</span>
+            </div>
+          </div>
+          <p class="acesso-hint">Na primeira vez, o acesso fica salvo. Para cadastrar outro objeto, repita o mesmo login e a mesma senha.</p>
+        </div>
         <div class="field">
           <label for="iNome">Nome do objeto <span class="req">*</span></label>
           <input class="input" id="iNome" maxlength="60" placeholder="Ex.: Garrafa azul">
@@ -195,12 +184,6 @@
             </div>
           </div>
         </div>
-        <fieldset class="status-pick" id="statusPick">
-          <legend>Status</legend>
-          <label><input type="radio" name="status" value="disponivel" id="st1"><b>Disponível</b>Esperando o dono</label>
-          <label><input type="radio" name="status" value="aguardando" id="st2"><b>Aguardando retirada</b>Dono identificado</label>
-          <label><input type="radio" name="status" value="devolvido" id="st3"><b>Devolvido</b>Já voltou pro dono</label>
-        </fieldset>
         <div class="form-actions">
           <button type="submit" class="btn primary" id="submitBtn">Cadastrar objeto</button>
           <button type="button" class="btn ghost" id="cancelEdit" hidden>Cancelar edição</button>
@@ -216,29 +199,17 @@
   <!-- GERENCIAR -->
   <section data-view="gerenciar" hidden>
     <div class="page-title">
-      <h1>Gerenciar objetos</h1>
-      <p>Área da pessoa responsável pelos achados: ver, editar, excluir e mudar o status de cada objeto.</p>
+      <h1>Secretaria</h1>
+      <p>Confirme a entrega, desfaça uma reserva errada ou corrija um cadastro.</p>
     </div>
     <div class="summary" id="summary"></div>
-    <div class="manage">
-      <div>
-        <div class="list" id="manageList"></div>
-        <div class="manage-foot">
-          <span>Tudo o que muda aqui fica salvo no banco de dados do servidor.</span>
-        </div>
-      </div>
-      <aside class="log">
-        <h3>Requisições da API</h3>
-        <p>Chamadas reais que o site fez para o backend, com a resposta do servidor.</p>
-        <ol id="logList"></ol>
-      </aside>
-    </div>
+    <div class="list" id="manageList"></div>
   </section>
 </main>
 
 <footer class="foot">
   <p class="hand">Mais organização, mais chances de reencontrar o que é seu!</p>
-  <span>Achados e Perdidos · Node.js + Express + SQLite</span>
+  <p class="credito">Projeto de Francisco Rick, Josefa Vergara e Maria Eduarda Cirquero.</p>
 </footer>
 
 <div class="overlay" id="overlay" hidden>

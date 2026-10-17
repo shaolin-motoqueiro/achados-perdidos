@@ -4,12 +4,13 @@
   "description": "Sistema fullstack de Achados e Perdidos da escola: frontend, backend (API) e banco de dados com CRUD completo.",
   "main": "server.js",
   "scripts": {
-    "start": "node --no-warnings=ExperimentalWarning server.js"
+    "start": "node --env-file=.env --no-warnings=ExperimentalWarning server.js"
   },
   "engines": {
     "node": ">=22.13"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
     "express": "^5.1.0"
   }
 }

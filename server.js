@@ -2,6 +2,10 @@
 // BACKEND (Node.js + Express)
 // Recebe as requisições do frontend, aplica as regras do sistema
 // e conversa com o banco de dados.
+//
+// Um objeto encontrado nasce disponível e sem dono.
+// Outra pessoa se identifica e marca a retirada.
+// A secretaria confirma a entrega, e aí o registro não muda mais.
 // ===================================================================
 const path = require('node:path');
 const express = require('express');
@@ -20,13 +24,33 @@ app.use(express.static(path.join(__dirname, 'public')));
 // REGRAS DO SISTEMA
 // -------------------------------------------------------------------
 const CATEGORIAS = ['mochila', 'garrafa', 'chaves', 'estojo', 'roupa', 'eletronico', 'livro', 'outros'];
-const STATUS = ['disponivel', 'aguardando', 'devolvido'];
 
 function texto(valor) {
   return typeof valor === 'string' ? valor.trim() : '';
 }
 
-// Confere se os dados de um objeto estão certos. Devolve a lista de erros.
+function dataReal(valor) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(valor || '')) return false;
+  const [ano, mes, dia] = valor.split('-').map(Number);
+  const data = new Date(Date.UTC(ano, mes - 1, dia));
+  return data.getUTCFullYear() === ano && data.getUTCMonth() === mes - 1 && data.getUTCDate() === dia;
+}
+
+function hoje() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+}
+
+function idDaRota(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(404).json({ erro: 'Objeto não encontrado.' });
+    return null;
+  }
+  return id;
+}
+
+// Confere os dados do objeto. Situação e dono não entram aqui:
+// eles só mudam na reserva e na confirmação da retirada.
 function validar(o) {
   const erros = [];
   if (!texto(o.nome)) erros.push('O nome do objeto é obrigatório.');
@@ -34,15 +58,38 @@ function validar(o) {
   if (!CATEGORIAS.includes(o.categoria)) erros.push('Categoria inválida.');
   if (!texto(o.local_encontrado)) erros.push('O local onde foi encontrado é obrigatório.');
   if (texto(o.local_encontrado).length > 40) erros.push('O local pode ter no máximo 40 letras.');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(o.data_encontrada || '')) erros.push('A data deve estar no formato AAAA-MM-DD.');
-  if (!STATUS.includes(o.status)) erros.push('Status inválido.');
+  if (!dataReal(o.data_encontrada)) erros.push('A data deve estar no formato AAAA-MM-DD.');
+  else if (o.data_encontrada > hoje()) erros.push('A data em que o objeto foi encontrado não pode ser no futuro.');
   if (o.descricao && String(o.descricao).length > 280) erros.push('A descrição pode ter no máximo 280 letras.');
   if (o.foto && !String(o.foto).startsWith('data:image/')) erros.push('A foto precisa ser uma imagem.');
   return erros;
 }
 
+function validarAcesso(body) {
+  const login = texto(body.login);
+  const senha = texto(body.senha);
+  const erros = [];
+  if (login.length < 3) erros.push('O login precisa ter pelo menos 3 letras.');
+  else if (login.length > 40) erros.push('O login pode ter no máximo 40 letras.');
+  else if (/\s/.test(login)) erros.push('O login não pode ter espaço.');
+  if (senha.length < 4) erros.push('A senha precisa ter pelo menos 4 letras.');
+  else if (senha.length > 40) erros.push('A senha pode ter no máximo 40 letras.');
+  return { login, senha, erros };
+}
+
+function validarDono(body) {
+  const nome = texto(body.dono_nome);
+  const contato = texto(body.dono_contato);
+  const erros = [];
+  if (!nome) erros.push('O nome do dono é obrigatório.');
+  if (nome.length > 60) erros.push('O nome do dono pode ter no máximo 60 letras.');
+  if (!contato) erros.push('O contato do dono é obrigatório.');
+  if (contato.length > 80) erros.push('O contato pode ter no máximo 80 letras.');
+  return { nome, contato, erros };
+}
+
 function buscarPorId(id) {
-  return db.prepare('SELECT * FROM objetos WHERE id = ?').get(id);
+  return db.buscarObjeto(id);
 }
 
 // -------------------------------------------------------------------
@@ -50,49 +97,52 @@ function buscarPorId(id) {
 // -------------------------------------------------------------------
 
 // GET /api/objetos → lista todos os objetos (consulta)
-app.get('/api/objetos', (req, res) => {
-  const objetos = db.prepare('SELECT * FROM objetos ORDER BY data_encontrada DESC, id DESC').all();
+app.get('/api/objetos', async (req, res) => {
+  const objetos = await db.listarObjetos();
   res.json(objetos);
 });
 
 // GET /api/objetos/:id → mostra um objeto
-app.get('/api/objetos/:id', (req, res) => {
-  const objeto = buscarPorId(Number(req.params.id));
+app.get('/api/objetos/:id', async (req, res) => {
+  const id = idDaRota(req, res);
+  if (id == null) return;
+  const objeto = await buscarPorId(id);
   if (!objeto) return res.status(404).json({ erro: 'Objeto não encontrado.' });
   res.json(objeto);
 });
 
-// POST /api/objetos → cadastra um objeto novo (cadastro)
-app.post('/api/objetos', (req, res) => {
+// POST /api/objetos → cadastra um objeto encontrado, sempre disponível e sem dono
+app.post('/api/objetos', async (req, res) => {
   const novo = {
     nome: texto(req.body.nome),
     categoria: req.body.categoria,
     descricao: texto(req.body.descricao),
     local_encontrado: texto(req.body.local_encontrado),
     data_encontrada: req.body.data_encontrada,
-    status: req.body.status || 'disponivel',
     foto: req.body.foto || null
   };
 
-  const erros = validar(novo);
+  const acesso = validarAcesso(req.body);
+  const erros = validar(novo).concat(acesso.erros);
   if (erros.length) return res.status(400).json({ erro: erros.join(' ') });
 
-  const resultado = db.prepare(`
-    INSERT INTO objetos (nome, categoria, descricao, local_encontrado, data_encontrada, status, foto)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(novo.nome, novo.categoria, novo.descricao, novo.local_encontrado, novo.data_encontrada, novo.status, novo.foto);
+  const entrada = await db.entrar(acesso.login, acesso.senha);
+  if (entrada.erro) return res.status(401).json({ erro: entrada.erro });
 
-  res.status(201).json(buscarPorId(Number(resultado.lastInsertRowid)));
+  res.status(201).json(await db.criarObjeto(novo));
 });
 
-// PUT /api/objetos/:id → altera um objeto (alteração)
-// Aceita só os campos que mudaram, por exemplo { "status": "devolvido" }
-app.put('/api/objetos/:id', (req, res) => {
-  const id = Number(req.params.id);
-  const atual = buscarPorId(id);
+// PUT /api/objetos/:id → corrige os dados do objeto, sem mexer no dono nem na situação
+app.put('/api/objetos/:id', async (req, res) => {
+  const id = idDaRota(req, res);
+  if (id == null) return;
+  const atual = await buscarPorId(id);
   if (!atual) return res.status(404).json({ erro: 'Objeto não encontrado.' });
+  if (atual.status === 'devolvido') {
+    return res.status(400).json({ erro: 'Objeto já devolvido não pode ser alterado.' });
+  }
 
-  const campos = ['nome', 'categoria', 'descricao', 'local_encontrado', 'data_encontrada', 'status', 'foto'];
+  const campos = ['nome', 'categoria', 'descricao', 'local_encontrado', 'data_encontrada', 'foto'];
   const atualizado = { ...atual };
   for (const campo of campos) {
     if (req.body[campo] !== undefined) atualizado[campo] = req.body[campo];
@@ -107,20 +157,75 @@ app.put('/api/objetos/:id', (req, res) => {
   const erros = validar(atualizado);
   if (erros.length) return res.status(400).json({ erro: erros.join(' ') });
 
-  db.prepare(`
-    UPDATE objetos
-    SET nome = ?, categoria = ?, descricao = ?, local_encontrado = ?, data_encontrada = ?, status = ?, foto = ?, desenho = ?
-    WHERE id = ?
-  `).run(atualizado.nome, atualizado.categoria, atualizado.descricao, atualizado.local_encontrado,
-    atualizado.data_encontrada, atualizado.status, atualizado.foto || null, atualizado.desenho || null, id);
+  const salvo = await db.atualizarObjeto(id, atualizado);
+  if (!salvo) {
+    const deNovo = await buscarPorId(id);
+    if (!deNovo) return res.status(404).json({ erro: 'Objeto não encontrado.' });
+    return res.status(400).json({ erro: 'Objeto já devolvido não pode ser alterado.' });
+  }
+  res.json(salvo);
+});
 
-  res.json(buscarPorId(id));
+// POST /api/objetos/:id/reivindicar → outra pessoa se identifica como dono e marca a retirada
+app.post('/api/objetos/:id/reivindicar', async (req, res) => {
+  const id = idDaRota(req, res);
+  if (id == null) return;
+  const atual = await buscarPorId(id);
+  if (!atual) return res.status(404).json({ erro: 'Objeto não encontrado.' });
+  if (atual.status === 'devolvido') {
+    return res.status(400).json({ erro: 'Este objeto já foi devolvido.' });
+  }
+  if (atual.status === 'aguardando') {
+    return res.status(409).json({ erro: 'Este objeto já está reservado para ' + atual.dono_nome + '.' });
+  }
+
+  const dono = validarDono(req.body);
+  if (dono.erros.length) return res.status(400).json({ erro: dono.erros.join(' ') });
+
+  const salvo = await db.reivindicarObjeto(id, dono);
+  if (!salvo) return res.status(409).json({ erro: 'Alguém acabou de reservar este objeto.' });
+  res.json(salvo);
+});
+
+// POST /api/objetos/:id/cancelar → desfaz a reserva e o objeto volta a ficar sem dono
+app.post('/api/objetos/:id/cancelar', async (req, res) => {
+  const id = idDaRota(req, res);
+  if (id == null) return;
+  const atual = await buscarPorId(id);
+  if (!atual) return res.status(404).json({ erro: 'Objeto não encontrado.' });
+  if (atual.status !== 'aguardando') {
+    return res.status(400).json({ erro: 'Só dá para desfazer a reserva de um objeto que está aguardando retirada.' });
+  }
+
+  const salvo = await db.cancelarReserva(id);
+  if (!salvo) return res.status(409).json({ erro: 'A situação deste objeto mudou. Atualize a página.' });
+  res.json(salvo);
+});
+
+// POST /api/objetos/:id/retirar → a secretaria confirma que o dono já levou o objeto
+app.post('/api/objetos/:id/retirar', async (req, res) => {
+  const id = idDaRota(req, res);
+  if (id == null) return;
+  const atual = await buscarPorId(id);
+  if (!atual) return res.status(404).json({ erro: 'Objeto não encontrado.' });
+  if (atual.status === 'disponivel') {
+    return res.status(400).json({ erro: 'Só dá para confirmar a retirada depois que um dono reservar o objeto.' });
+  }
+  if (atual.status === 'devolvido') {
+    return res.status(400).json({ erro: 'Este objeto já foi devolvido.' });
+  }
+
+  const salvo = await db.confirmarRetirada(id);
+  if (!salvo) return res.status(409).json({ erro: 'A situação deste objeto mudou. Atualize a página.' });
+  res.json(salvo);
 });
 
 // DELETE /api/objetos/:id → exclui um objeto (exclusão)
-app.delete('/api/objetos/:id', (req, res) => {
-  const resultado = db.prepare('DELETE FROM objetos WHERE id = ?').run(Number(req.params.id));
-  if (resultado.changes === 0) return res.status(404).json({ erro: 'Objeto não encontrado.' });
+app.delete('/api/objetos/:id', async (req, res) => {
+  const id = idDaRota(req, res);
+  if (id == null) return;
+  const excluiu = await db.excluirObjeto(id);
+  if (!excluiu) return res.status(404).json({ erro: 'Objeto não encontrado.' });
   res.status(204).end();
 });
 
