@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: achados-perdidos
+    runtime: node
+    region: virginia
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false

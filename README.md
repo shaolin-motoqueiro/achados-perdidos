@@ -96,10 +96,13 @@ Regras: nome, local e data são obrigatórios; a data é real e não pode ser no
 
 ## Colocar online
 
-O Netlify só hospeda sites estáticos, então ele não roda o backend. Para ter um link público, use um serviço que roda Node.js, como o **Render**:
+O site e a API sobem juntos no **Render**, ligados ao repositório do GitHub. O banco continua no Supabase.
 
-1. Suba esta pasta para um repositório no GitHub.
-2. No Render, crie um **Web Service** ligado ao repositório.
-3. Build command: `npm install` · Start command: `npm start`
+1. Entre em [dashboard.render.com](https://dashboard.render.com) e escolha **New → Blueprint**.
+2. Conecte a conta do GitHub e selecione o repositório `achados-perdidos`.
+3. O Render lê o arquivo `render.yaml`. Quando pedir, cole os valores de `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY` que estão no `.env` deste computador.
+4. Confirme a criação. O endereço público fica no formato `https://achados-perdidos.onrender.com`.
 
-No Render, configure as mesmas variáveis `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY` do arquivo `.env`. Os objetos ficam no Supabase, então continuam lá quando o serviço reinicia.
+Build: `npm install`. Start: `npm start`. A região é a Virgínia, a mesma do projeto Supabase.
+
+No plano grátis o serviço dorme sem visitas. A primeira abertura depois disso pode levar cerca de um minuto. Os objetos não se perdem, porque ficam no Supabase.

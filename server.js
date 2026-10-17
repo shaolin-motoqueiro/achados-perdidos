@@ -7,7 +7,16 @@
 // Outra pessoa se identifica e marca a retirada.
 // A secretaria confirma a entrega, e aí o registro não muda mais.
 // ===================================================================
+const fs = require('node:fs');
 const path = require('node:path');
+
+// No computador, as chaves ficam no .env. No Render elas já vêm do painel,
+// e uma variável que já existe no ambiente não é substituída.
+const arquivoEnv = path.join(__dirname, '.env');
+if (fs.existsSync(arquivoEnv)) {
+  process.loadEnvFile(arquivoEnv);
+}
+
 const express = require('express');
 const db = require('./db');
 
